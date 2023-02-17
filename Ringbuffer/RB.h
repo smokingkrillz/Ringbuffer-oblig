@@ -1,52 +1,46 @@
 #pragma once
 #include <iostream>
 #include <vector>
-#include <memory>
-#include <stdlib.h>
+#include <atomic>
 #include <mutex>
-#include <thread>
 template <typename T>
 class Ringbuffer
 {
 private:
+	//the buffer is the vector with the objects
 	std::vector<T> m_Objects;
-	size_t m_read; //tail
-	size_t m_write; //head
+	std::atomic<size_t> m_read; //tail
+	std::atomic<size_t> m_write;//head
+	std::mutex mutex_lock;
 public:
 	explicit Ringbuffer(size_t size) :
-		m_Objects(size), m_read{ 0 }, m_write{ 0 } {}
+		m_Objects(size), m_read{ 0 }, m_write{ 0 } {} 
 
-	auto get_size() {
-		return m_Objects.size();
-	}
 	auto isEmpty() const {
 		return m_read == m_write;
 	}
 	auto isFull() const {
-		return((m_write > m_read) && (m_write % m_Objects.size() == m_read % m_Objects.size()));
+		return((m_write > m_read) &&
+			(m_write % m_Objects.size() == m_read % m_Objects.size()));
 	}
-	void write_item(T& input,std::mutex& lock) {
-		if(isFull() == false){
-			// 
-			lock.lock();
-			m_Objects[m_write++] = input;
-			if (m_write == m_Objects.size()) m_write = 0;
-			lock.unlock();
+	void write_item(T& input) {
+		std::lock_guard<std::mutex> lock(mutex_lock);
+		if(isFull() == false){ //as long as buffer is not full we can write
+			m_Objects[m_write] = input;
+			m_write++;
+			if (m_write == m_Objects.size()) m_write = 0; //resetting index
 		}
 	}
 
-
-	T* read_item(std::mutex& lock) {
-		if (!isEmpty()) {
-			//if (index > m_Objects.size()) std::cout << "index is bigger than size\n";
-			//  t1 og T
-			lock.lock();
+	bool read_item(T* object) {
+		std::lock_guard<std::mutex> lock(mutex_lock);
+		if (!isEmpty()) { //reads only if it isn't empty
 			if (m_read == m_Objects.size()) m_read = 0;
-			lock.unlock();
-			// tråd 1 
-			return &(m_Objects[m_read++]);
+			*object = m_Objects[m_read];
+			m_read++;
+			return true;
 		}
-		else return nullptr;
+		else return false;
 	}
 
 };
